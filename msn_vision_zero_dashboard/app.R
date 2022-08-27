@@ -17,6 +17,7 @@ library(sf)
 library(jsonlite)
 library(tmap)
 library(shinydashboard)
+library(DT)
 
 # download crash data and save it locally
 # 
@@ -40,12 +41,16 @@ last_year_YTD <- interval(start = floor_date(today() - years(1), unit = "year"),
 
 
 
-# data frame for YTD map that keeps geography
-crashes_map <- df %>% 
+# data frame for map that keeps geography
+crashes_map <- df_hist %>% 
+  add_column(crashesJSON$features$properties$flags) %>% 
   filter(muniname == "MADISON") %>% 
-  mutate(severity = case_when(injsvr == "A" ~ "serious injury crash",
+  mutate(date = mdy(date),
+         severity = case_when(injsvr == "A" ~ "serious injury crash",
                               injsvr == "K" ~ "fatal crash"),
+         year = year(date),
          location = paste0(stringr::str_to_title(onrdwy), " at ", stringr::str_to_title(atrdwy)))
+
 
 # historic numbers
 crashes_hist <- df_hist %>%
@@ -201,9 +206,9 @@ ui <- dashboardPage(
   ## Sidebar content
   dashboardSidebar(
     sidebarMenu(
-      menuItem("Crashes year-to-date", tabName = "all_crashes", icon = icon("dashboard")),
+      menuItem("Crashes year-to-date", tabName = "all_crashes", icon = icon("calendar")),
       menuItem("Bike crashes", tabName = "bikes", icon = icon("bicycle")),
-      menuItem("Maps", tabName = "maps", icon = icon("map"))
+      menuItem("Data notes", tabName = "data", icon = icon("database"))
     )
   ),
     
@@ -243,12 +248,37 @@ ui <- dashboardPage(
         
         # Second tab content
         tabItem(tabName = "bikes",
-                h2("Bike crashes"),
+                h2("Fatal and serious injury bike crashes"),
                 fluidRow(
+                  crashes_hist |> 
+                    filter(bikeflag == "Y") |> 
+                    group_by(year) |> 
+                    summarize(sum(totfatl), sum(totinj)) |> 
+                    datatable(rownames = F, width = "80%",
+                              colnames = c('Year', 'Number of bike fatalities', 'Number of bike serious injuries'))
                   
+                ),
+                fluidRow(h2("Where did serious and fatal bike crashes occur?"),
+                         tmapOutput("bikeMap"))
+        ),
+        tabItem(tabName = "data",
+                h2("Data notes"),
+                p("All crash data is sourced from Community Maps. Community Maps provide the following disclaimer:"),
+                tags$blockquote("Community Maps provides a statewide map of all police reported motor vehicle crashes in
+Wisconsin from 2010 to the current year. Fatal crashes are included from 2001. Crashes
+occurring on or after January 1, 2017 are mapped using geo-coded locations from the Wisconsin
+DT4000 police crash report. Prior year crashes have been geo-coded from the crash report
+location descriptions. Crashes that have not been geo-coded are not displayed on the map.
+Community Maps is maintained by the Wisconsin Traffic Operations and Safety (TOPS)
+Laboratory for research purposes and as a service to the Wisconsin Department of
+Transportation Bureau of Transportation Safety. See Community Maps for more information:
+https://CommunityMaps.wi.gov/."),
+                h3("Known limitations"),
+                p("Especially for bike and pedestrian crashes, the data have limitations: Crashes that do not involve a motor vehicle are not included in the data. For overall crash data, bike or pedestrian crashes that do involve a motor vehicle but do not result in injury or property damage over $1000 are not included as well."),
+                p("The time between when a crash happens and when it appears in CommunityMaps varies. Year-to-date figures therefore may exclude crashes that occurred very recently.")
                 )
-        )
-      )
+      ),
+      tags$footer("Feature requests? Suggestions? Bug? Submit ", a("an issue on Github", href="https://github.com/vgXhc/vision_zero_dashboard/issues/"), "or reach out via ", a("Twitter", href= "https://twitter.com/HaraldKliems"))
     )
 )
 
@@ -346,8 +376,10 @@ server <- function(input, output) {
     )
     
     # map of crashes YTD
-    output$ytdMap <- renderTmap({
-      tm_shape(crashes_map) +
+    output$ytdMap <- renderTmap(
+      crashes_map |> 
+        filter(year == year(today())) |> 
+                 tm_shape() +
         tm_dots("severity",
                 popup.vars=c("Date"="date", 
                              "Number of fatalities" = "totfatl", 
@@ -356,11 +388,26 @@ server <- function(input, output) {
                 palette = c("black", "red")) +
         tm_shape(madison) +
         tm_polygons(alpha = .2)
-    })
+    )
     
     output$monthChart <- renderPlot({
       ytd_chart
     })
+    
+    # map of bike crashes
+    output$bikeMap <- renderTmap(
+      crashes_map |> 
+        filter(bikeflag == "Y") |> 
+        tm_shape() +
+        tm_dots("severity",
+                popup.vars=c("Date"="date", 
+                             "Number of fatalities" = "totfatl", 
+                             "Number of serious injuries" = "totinj",
+                             "Location" = "location"),
+                palette = c("black", "red")) +
+        tm_shape(madison) +
+        tm_polygons(alpha = .2)
+    )
 
 }
 
