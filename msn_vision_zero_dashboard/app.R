@@ -18,12 +18,7 @@ library(jsonlite)
 library(tmap)
 library(shinydashboard)
 
-# download this year's crash data
-url <- paste0("https://CommunityMaps.wi.gov/crash/public/crashesKML.do?filetype=json&startyear=", year(today()), "&injsvr=K&injsvr=A&county=dane")
-download.file(url, "crashes.json")
-df <- st_read("crashes.json")
-
-# download historic crash data and save it locally
+# download crash data and save it locally
 # 
 download.file("https://CommunityMaps.wi.gov/crash/public/crashesKML.do?filetype=json&startyear=2017&injsvr=K&injsvr=A&county=dane", "crashes_hist.json")
 df_hist <- st_read("crashes_hist.json")
@@ -37,22 +32,15 @@ madison <- st_read("data/City_Limit.shp") %>%
 # set up time intervals
 d <- today()
 
+# last year YTD for comparison
+last_year_YTD <- interval(start = floor_date(today() - years(1), unit = "year"),
+                          end = today() - years(1))
 
 
-crashes <- df %>%
-  mutate(date = mdy(date),
-         totfatl = as.numeric(totfatl),
-         totinj = as.numeric(totinj)) %>%
-  st_drop_geometry()
 
-# to access the various flags in the data, we need to parse the json once more
-# and then add that to the original crashes data frame
-crashesJSON <- fromJSON("crashes.json")
-crashes <- crashes %>%
-  add_column(crashesJSON$features$properties$flags) %>%
-  filter(muniname == "MADISON")
 
-# data frame for YTD map
+
+# data frame for YTD map that keeps geography
 crashes_map <- df %>% 
   filter(muniname == "MADISON") %>% 
   mutate(severity = case_when(injsvr == "A" ~ "serious injury crash",
@@ -68,17 +56,18 @@ crashes_hist <- df_hist %>%
          month = month(date, label = T)) %>%
   st_drop_geometry()
 
-# add flags to historic crashes
+# to access the various flags in the data, we need to parse the json once more
+# and then add that to the original crashes data frame
 crashesJSON <- fromJSON("crashes_hist.json")
 crashes_hist <- crashes_hist %>%
   add_column(crashesJSON$features$properties$flags) %>% 
   filter(muniname == "MADISON")
 
-# last year YTD for comparison
-last_year_YTD <- interval(start = floor_date(today() - years(1), unit = "year"),
-                          end = today() - years(1))
 
 
+# data frame for current year
+crashes <- crashes_hist |> 
+  filter(year == year(today()))
 
 
 
@@ -212,8 +201,8 @@ ui <- dashboardPage(
   ## Sidebar content
   dashboardSidebar(
     sidebarMenu(
-      menuItem("Crashes year-to-date", tabName = "dashboard", icon = icon("dashboard")),
-      menuItem("Widgets", tabName = "widgets", icon = icon("th")),
+      menuItem("Crashes year-to-date", tabName = "all_crashes", icon = icon("dashboard")),
+      menuItem("Bike crashes", tabName = "bikes", icon = icon("bicycle")),
       menuItem("Maps", tabName = "maps", icon = icon("map"))
     )
   ),
@@ -222,7 +211,7 @@ ui <- dashboardPage(
     dashboardBody(
       tabItems(
         # First tab content
-        tabItem(tabName = "dashboard",
+        tabItem(tabName = "all_crashes",
                 fluidRow(
                   box(title = "All fatalities and serious injuries", width = 12,
                       p("Number year-to-date and change from previous year-to-date"),
@@ -253,8 +242,11 @@ ui <- dashboardPage(
         ),
         
         # Second tab content
-        tabItem(tabName = "widgets",
-                h2("Widgets tab content")
+        tabItem(tabName = "bikes",
+                h2("Bike crashes"),
+                fluidRow(
+                  
+                )
         )
       )
     )
