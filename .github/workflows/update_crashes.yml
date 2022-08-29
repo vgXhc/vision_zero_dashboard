@@ -1,0 +1,35 @@
+# Workflow to download crash file from website and update it in repository
+
+name: Update crashes
+
+# Controls when the workflow will run
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "update"
+  update:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v3
+
+      # Runs a single command using the runners shell
+      - name: show directory for debug
+        run: ls
+        
+      - name: download GTFS file
+        run: wget -P msn_vision_zero_dashboard/data/ https://CommunityMaps.wi.gov/crash/public/crashesKML.do?filetype=json&startyear=2017&injsvr=K&injsvr=A&county=dane
+        
+      - name: Update files on GitHub
+        uses: test-room-7/action-update-file@v1.6.0
+        with:
+              file-path: bus_tracker/data/*.json
+              commit-msg: Updated crash file
+              github-token: ${{ secrets.GITHUB_TOKEN }}
