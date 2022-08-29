@@ -1,0 +1,14 @@
+name: msn_vision_zero_dashboard
+title: msn_vision_zero_dashboard
+username:
+account: vgxhc
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 6862336
+bundleId: 6245539
+url: https://haraldkliems.shinyapps.io/msn_vision_zero_dashboard/
+when: 1661704239.57998
+lastSyncTime: 1661704239.57998
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: crashes.json|crashes_hist.json
