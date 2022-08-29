@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v3
         
       - name: download GTFS file
-        run: rm msn_vision_zero_dashboard/data/crashes.json && wget -P msn_vision_zero_dashboard/data/ -O crashes.json "https://CommunityMaps.wi.gov/crash/public/crashesKML.do?filetype=json&startyear=2017&injsvr=K&injsvr=A&county=dane"
+        run: wget -P msn_vision_zero_dashboard/data/ -O crashes.json "https://CommunityMaps.wi.gov/crash/public/crashesKML.do?filetype=json&startyear=2017&injsvr=K&injsvr=A&county=dane"
         
       - name: Update files on GitHub
         uses: test-room-7/action-update-file@v1.6.0
