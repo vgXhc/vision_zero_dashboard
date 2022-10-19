@@ -1,31 +1,21 @@
-# Workflow to download crash file from website and update it in repository
+name: update_crashes
 
-name: Update crashes
-
-# Controls when the workflow will run
 on:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 10 12 * *'
   workflow_dispatch:
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
-jobs:
-  # This workflow contains a single job called "update"
-  update:
-    # The type of runner that the job will run on
-    runs-on: ubuntu-latest
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
+jobs:
+  update_crashes:
+    runs-on: macOS-latest
+    env:
+      S3_ACCESS_KEY: ${{ secrets.S3_ACCESS_KEY }}
+      S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v3
-        
-      - name: download GTFS file
-        run: cd msn_vision_zero_dashboard/data && wget -O crashes.json "https://CommunityMaps.wi.gov/crash/public/crashesKML.do?filetype=json&startyear=2017&injsvr=K&injsvr=A&county=dane"
-        
-      - name: Update files on GitHub
-        uses: test-room-7/action-update-file@v1.6.0
-        with:
-              file-path: msn_vision_zero_dashboard/data/crashes.json
-              commit-msg: Updated crash file
-              github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@v2
+      - uses: r-lib/actions/setup-r@master
+      - name: Install required packages
+        run: Rscript -e 'install.packages(c("pins", "sf"), type = "mac.binary", dependencies = TRUE)'
+      - name: Run R script to update crashes
+        run: Rscript update_crash_data.R
