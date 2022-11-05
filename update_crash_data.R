@@ -3,10 +3,9 @@
 
 library(pins)
 library(sf)
-library(lubridate)
-library(purrr)
+library(tidyverse)
 library(jsonlite)
-library(tibble)
+
 
 board <- board_s3("vzpins", 
                   region = "us-east-1", 
