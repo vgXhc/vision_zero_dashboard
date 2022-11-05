@@ -5,6 +5,7 @@ library(pins)
 library(sf)
 library(lubridate)
 library(purrr)
+library(jsonlite)
 
 board <- board_s3("vzpins", 
                   region = "us-east-1", 
