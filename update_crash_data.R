@@ -4,6 +4,7 @@
 library(pins)
 library(sf)
 library(lubridate)
+library(purrr)
 
 board <- board_s3("vzpins", 
                   region = "us-east-1", 
