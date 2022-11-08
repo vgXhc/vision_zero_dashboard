@@ -8,11 +8,22 @@ library(jsonlite)
 library(tmap)
 library(shinydashboard)
 library(DT)
+library(paws)
+library(paws.storage)
+library(pins)
 
-# download crash data and save it locally
-# 
-download.file("https://CommunityMaps.wi.gov/crash/public/crashesKML.do?filetype=json&startyear=2017&injsvr=K&injsvr=A&county=dane", "crashes_hist.json")
-df_hist <- st_read("crashes_hist.json")
+
+board <- board_s3("vzpins",
+                  region = "us-east-1",
+                  access_key = Sys.getenv("S3_ACCESS_KEY"),
+                  secret_access_key = Sys.getenv("S3_SECRET_ACCESS_KEY"))
+
+
+
+
+crashes_all_dane <- pin_read(board = board, name = "crashes_all_dane")
+
+
 
 # Madison city limits
 # downloaded from OpenData portal https://data-cityofmadison.opendata.arcgis.com/datasets/cityofmadison::city-limit/about
@@ -28,15 +39,11 @@ last_year_YTD <- interval(start = floor_date(today() - years(1), unit = "year"),
                           end = today() - years(1))
 
 
-# to access the various flags in the data, we need to parse the json once more
-# and then add that to the original crashes data frame
-crashesJSON <- fromJSON("crashes_hist.json")
 
 
 # data frame for map that keeps geography
-crashes_map <- df_hist %>% 
-  add_column(crashesJSON$features$properties$flags) %>% 
-  filter(muniname == "MADISON") %>% 
+crashes_KA_map <- crashes_all_dane %>% 
+  filter(muniname == "MADISON" &  injsvr %in% c("A", "K")) %>% 
   mutate(date = mdy(date),
          severity = case_when(injsvr == "A" ~ "serious injury crash",
                               injsvr == "K" ~ "fatal crash"),
@@ -45,34 +52,32 @@ crashes_map <- df_hist %>%
 
 
 # historic numbers
-crashes_hist <- df_hist %>%
+crashes_KA_hist <- crashes_all_dane %>%
+  st_drop_geometry |> 
+  filter(muniname == "MADISON" & injsvr %in% c("A", "K")) |> 
   mutate(date = mdy(date),
          totfatl = as.numeric(totfatl),
          totinj = as.numeric(totinj),
          year = year(date),
-         month = month(date, label = T)) %>%
-  st_drop_geometry()
+         month = month(date, label = T))
 
 
-crashes_hist <- crashes_hist %>%
-  add_column(crashesJSON$features$properties$flags) %>% 
-  filter(muniname == "MADISON")
 
 
 
 # data frame for current year
-crashes <- crashes_hist |> 
+crashes <- crashes_KA_hist |> 
   filter(year == year(today()))
 
 
 
-crashes_last_year_YTD <- crashes_hist %>% 
+crashes_last_year_YTD <- crashes_KA_hist %>% 
   filter(date %within% last_year_YTD)
 
 last_month <- month(floor_date(d, unit = "month") -1, label = T, abbr = T)
 last_month_long <- month(floor_date(d, unit = "month") -1, label = T, abbr = F)
 
-crashes_hist_by_mo <-  crashes_hist %>% 
+crashes_hist_by_mo <-  crashes_KA_hist %>% 
   group_by(year, month) %>% 
   summarize(tot_fat_mo = sum(totfatl), 
             tot_inj_mo = sum(totinj), 
@@ -85,8 +90,15 @@ ranked <- crashes_hist_by_mo %>%
   filter(month == last_month) %>% 
   pull(tot_fat_inj_mo)
 crashes_last_mo <- tail(ranked, 1)
-rank_mo <- tail(rank(-ranked), n = 1)
-rank_mo_str <- ifelse(rank_mo == 1, "", toOrdinal(rank_mo))
+rank_mo <- tail(rank(-round(ranked), ties.method = "first"), n = 1)
+
+# if (rank_mo == 1){
+#   rank_mo_str <- "highest"
+# } else if (rank_mo == length(ranked)) {
+#   rank_mo_str <- "lowest"
+# } else{
+#   rank_mo_str <- paste0(toOrdinal(rank_mo), " highest")
+# }
 title_month <- paste0("Fatal and serious traffic injuries in Madison in ", last_month_long, ", 2017-2022")
 
 # function that returns the number of crashes by mode (flag) and type (serious/fatal)
@@ -129,17 +141,17 @@ ranked <- crashes_hist_by_mo %>%
   pull(tot_fat_inj_mo)
 crashes_last_mo <- tail(ranked, 1)
 rank_mo <- tail(rank(-ranked), n = 1)
-rank_mo_str <- ifelse(rank_mo == 1, "", toOrdinal(rank_mo))
-title_month <- paste0("Fatal and serious traffic injuries in Madison in ", last_month_long, ", 2017-2022")
-subtitle_month <- paste0("With ", 
-                         crashes_last_mo, 
-                         " fatalities and serious injuries, this year's ", 
-                         last_month_long ,
-                         " was the ",
-                         rank_mo_str,
-                         " worst ",
-                         "since 2017."
-)
+#rank_mo_str <- ifelse(rank_mo == 1, "", toOrdinal(rank_mo))
+# title_month <- paste0("Fatal and serious traffic injuries in Madison in ", last_month_long, ", 2017-2022")
+# subtitle_month <- paste0("With ", 
+#                          crashes_last_mo, 
+#                          " fatalities and serious injuries, this year's ", 
+#                          last_month_long ,
+#                          " was the ",
+#                          rank_mo_str,
+#                          " worst ",
+#                          "since 2017."
+# )
 
 
 
@@ -152,7 +164,7 @@ crash_names <- c(
 )
 
 ytd_chart <- 
-  crashes_hist %>% 
+  crashes_KA_hist %>% 
   filter(yday(date) <= yday(today())) %>% #filter to crashes YTD for every year
   group_by(year = year(date)) %>% 
   summarize(inj = sum(totinj), fatl = sum(totfatl), fat_inj = inj + fatl) %>% 
@@ -182,7 +194,9 @@ ui <- dashboardPage(
     sidebarMenu(
       menuItem("Crashes year-to-date", tabName = "all_crashes", icon = icon("calendar")),
       menuItem("Bike crashes", tabName = "bikes", icon = icon("bicycle")),
+      menuItem("Ped crashes", tabName = "peds", icon = icon("male")),
       menuItem("Impairment", tabName = "impaired", icon = icon("glass-martini")),
+      #menuItem("All crashes", tabName = "all_severity"),
       menuItem("Data notes/FAQ", tabName = "data", icon = icon("database"))
     )
   ),
@@ -221,11 +235,11 @@ ui <- dashboardPage(
                 )
         ),
         
-        # Second tab content
+        # Bike tab
         tabItem(tabName = "bikes",
                 h2("Fatal and serious injury bike crashes"),
                 fluidRow(
-                  crashes_hist |> 
+                  crashes_KA_hist |> 
                     filter(bikeflag == "Y") |> 
                     group_by(year) |> 
                     summarize(sum(totfatl), sum(totinj)) |> 
@@ -238,10 +252,28 @@ ui <- dashboardPage(
                 fluidRow(h2("Where did serious and fatal bike crashes occur?"),
                          tmapOutput("bikeMap"))
         ),
+        # Ped tab
+        tabItem(tabName = "peds",
+                h2("Fatal and serious injury pedestrian crashes"),
+                fluidRow(
+                  crashes_KA_hist |> 
+                    filter(pedflag == "Y") |> 
+                    group_by(year) |> 
+                    summarize(sum(totfatl), sum(totinj)) |> 
+                    datatable(rownames = F, 
+                              width = "80%",
+                              options = list(dom = "T"),
+                              colnames = c('Year', 'Number of pedestrian fatalities', 'Number of pedestrian serious injuries'))
+                  
+                ),
+                fluidRow(h2("Where did serious and fatal pedestrian crashes occur?"),
+                         tmapOutput("pedMap"))
+        ),
+        # impaired tab
         tabItem(tabName = "impaired",
                 h2("Serious and fatal crashes that involve impairment"),
                 fluidRow(
-                  crashes_hist |> 
+                  crashes_KA_hist |> 
                     filter(impaired == "Y") |> 
                     group_by(year) |> 
                     summarize(sum(totfatl), sum(totinj)) |> 
@@ -254,6 +286,23 @@ ui <- dashboardPage(
                 fluidRow(h2("Where did serious and fatal crashes involving impairment occur?"),
                          tmapOutput("impairedMap"))
         ),
+        # # all severities tab
+        # tabItem(tabName = "all_severity",
+        #         h2("All crashes, including those without injury"),
+        #         fluidRow(
+        #           crashes_hist |> 
+        #             filter(impaired == "Y") |> 
+        #             group_by(year) |> 
+        #             summarize(sum(totfatl), sum(totinj)) |> 
+        #             datatable(rownames = F, 
+        #                       width = "80%",
+        #                       options = list(dom = "T"),
+        #                       colnames = c('Year', 'Fatal injuries involving impairment', 'Serious injuries involving impairment'))
+        #           
+        #         ),
+        #         fluidRow(h2("Where did serious and fatal crashes involving impairment occur?"),
+        #                  tmapOutput("impairedMap"))
+        # ),
         tabItem(tabName = "data",
                 h2("Data notes/FAQ"),
                 p("All crash data is sourced from Community Maps. Community Maps provide the following disclaimer:"),
@@ -377,7 +426,7 @@ server <- function(input, output) {
       tm_shape(madison) +
         tm_polygons(alpha = .2,
                     id = "") +
-        tm_shape(crashes_map |> 
+        tm_shape(crashes_KA_map |> 
                    filter(year == year(today()))) +
         tm_dots("severity", 
                 id = "location",
@@ -396,7 +445,7 @@ server <- function(input, output) {
       tm_shape(madison) +
         tm_polygons(alpha = .2,
                     id = "") +
-        tm_shape(crashes_map |> 
+        tm_shape(crashes_KA_map |> 
           filter(bikeflag == "Y")) +
         tm_dots("severity",
                 id = "location",
@@ -406,12 +455,12 @@ server <- function(input, output) {
                 palette = c("black", "red"))
     )
     
-    # map of bike crashes
+    # map of impaired crashes
     output$impairedMap <- renderTmap(
       tm_shape(madison) +
         tm_polygons(alpha = .2,
                     id = "") +
-        tm_shape(crashes_map |> 
+        tm_shape(crashes_KA_map |> 
                    filter(impaired == "Y")) +
         tm_dots("severity",
                 id = "location",
@@ -420,6 +469,23 @@ server <- function(input, output) {
                              "Number of serious injuries" = "totinj"),
                 palette = c("black", "red"))
     )
+    # map of ped crashes
+    output$pedMap <- renderTmap(
+      tm_shape(madison) +
+        tm_polygons(alpha = .2,
+                    id = "") +
+        tm_shape(crashes_KA_map |> 
+                   filter(pedflag == "Y")) +
+        tm_dots("severity",
+                id = "location",
+                popup.vars=c("Date"="date", 
+                             "Number of fatalities" = "totfatl", 
+                             "Number of serious injuries" = "totinj"),
+                palette = c("black", "red")) +
+        tm_layout(title = "Pedestrian crashes")
+    )
+    
+    
 
 }
 
