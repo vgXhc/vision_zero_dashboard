@@ -13,21 +13,33 @@ library(paws.storage)
 library(pins)
 
 
+theme_set(theme_minimal())
+
+# crashes_all_msn |>
+#   st_drop_geometry() |> 
+#   group_by(severity, year) |>
+#   tally() |>
+#   ggplot(aes(year, n, color = severity)) +
+#   geom_line(size = 2) +
+#   geom_point(color = "black")+
+
+
+
 board <- board_s3("vzpins",
                   region = "us-east-1",
                   access_key = Sys.getenv("S3_ACCESS_KEY"),
                   secret_access_key = Sys.getenv("S3_SECRET_ACCESS_KEY"))
 
 
-
-
 crashes_all_dane <- pin_read(board = board, name = "crashes_all_dane")
+crashes_all_msn <- crashes_all_dane |> 
+  filter(muniname == "MADISON")
 
 
 
 # Madison city limits
 # downloaded from OpenData portal https://data-cityofmadison.opendata.arcgis.com/datasets/cityofmadison::city-limit/about
-madison <- st_read("data/City_Limit.shp") %>% 
+madison <- st_read("data/City_Limit.geojson") %>% 
   st_make_valid()
 
 
@@ -42,28 +54,18 @@ last_year_YTD <- interval(start = floor_date(today() - years(1), unit = "year"),
 
 
 # data frame for map that keeps geography
-crashes_KA_map <- crashes_all_dane %>% 
-  filter(muniname == "MADISON" &  injsvr %in% c("A", "K")) %>% 
-  mutate(date = mdy(date),
-         severity = case_when(injsvr == "A" ~ "serious injury crash",
-                              injsvr == "K" ~ "fatal crash"),
-         year = year(date),
-         location = paste0(stringr::str_to_title(onrdwy), " at ", stringr::str_to_title(atrdwy)))
+crashes_KA_map <- crashes_all_msn %>% 
+  filter(injsvr %in% c("A", "K")) %>% 
+  mutate(location = paste0(stringr::str_to_title(onrdwy), " at ", stringr::str_to_title(atrdwy)))
 
 
 # historic numbers
-crashes_KA_hist <- crashes_all_dane %>%
+crashes_KA_hist <- crashes_all_msn %>%
   st_drop_geometry |> 
-  filter(muniname == "MADISON" & injsvr %in% c("A", "K")) |> 
-  mutate(date = mdy(date),
-         totfatl = as.numeric(totfatl),
+  filter(injsvr %in% c("A", "K")) |> 
+  mutate(totfatl = as.numeric(totfatl),
          totinj = as.numeric(totinj),
-         year = year(date),
          month = month(date, label = T))
-
-
-
-
 
 # data frame for current year
 crashes <- crashes_KA_hist |> 
@@ -196,9 +198,11 @@ ui <- dashboardPage(
       menuItem("Bike crashes", tabName = "bikes", icon = icon("bicycle")),
       menuItem("Ped crashes", tabName = "peds", icon = icon("male")),
       menuItem("Impairment", tabName = "impaired", icon = icon("glass-martini")),
-      #menuItem("All crashes", tabName = "all_severity"),
+      menuItem("All crashes", tabName = "all_severity"),
       menuItem("Data notes/FAQ", tabName = "data", icon = icon("database"))
-    )
+    ),
+    p(a(img(src = "https://ko-fi.com/img/githubbutton_sm.svg"),
+        href = "https://ko-fi.com/X8X5EIPI8"))
   ),
     
     ## Body content
@@ -274,35 +278,45 @@ ui <- dashboardPage(
                 h2("Serious and fatal crashes that involve impairment"),
                 fluidRow(
                   crashes_KA_hist |> 
-                    filter(impaired == "Y") |> 
-                    group_by(year) |> 
-                    summarize(sum(totfatl), sum(totinj)) |> 
+                    # filter(impaired == "Y") |> 
+                    group_by(year, impaired) |> 
+                    summarize(sum_fatl = sum(totfatl), sum_inj = sum(totinj)) |> 
+                    pivot_wider(names_from = impaired, values_from = starts_with("sum_")) |> 
+                    mutate(prop_fatl_impaired = scales::percent(sum_fatl_Y/(sum_fatl_Y + sum_fatl_N)),
+                              prop_inj_impaired = scales::percent(sum_inj_Y/(sum_inj_Y + sum_inj_N))) |> 
+                    select(year, sum_fatl_Y, prop_fatl_impaired, sum_inj_Y, prop_inj_impaired) |> 
                     datatable(rownames = F, 
                               width = "80%",
                               options = list(dom = "T"),
-                              colnames = c('Year', 'Fatal injuries involving impairment', 'Serious injuries involving impairment'))
+                              colnames = c('Year', 
+                                           'Fatalities involving impairment', 
+                                           '% of all fatalities', 
+                                           'Serious injuries involving impairment', 
+                                           '% of all serious injuries'))
                   
                 ),
                 fluidRow(h2("Where did serious and fatal crashes involving impairment occur?"),
                          tmapOutput("impairedMap"))
         ),
-        # # all severities tab
-        # tabItem(tabName = "all_severity",
-        #         h2("All crashes, including those without injury"),
-        #         fluidRow(
-        #           crashes_hist |> 
-        #             filter(impaired == "Y") |> 
-        #             group_by(year) |> 
-        #             summarize(sum(totfatl), sum(totinj)) |> 
-        #             datatable(rownames = F, 
-        #                       width = "80%",
-        #                       options = list(dom = "T"),
-        #                       colnames = c('Year', 'Fatal injuries involving impairment', 'Serious injuries involving impairment'))
-        #           
-        #         ),
-        #         fluidRow(h2("Where did serious and fatal crashes involving impairment occur?"),
-        #                  tmapOutput("impairedMap"))
-        # ),
+        # all severities tab
+        tabItem(tabName = "all_severity",
+                h2("All crashes, including those without injury"),
+                p("Vision Zero is specifically about eliminating serious injury and fatal crashes. But what about the total number of crashes?"),
+                fluidRow(
+                  checkboxGroupInput("severity",
+                                   label = "Choose crash severities to be included",
+                                   choices = c(
+                                     "Fatal" = "K",
+                                     "Serious injury" = "A",
+                                     "Minor injury" = "B",
+                                     "Possible injury" = "C",
+                                     "No injury" = "O"
+                                   ),
+                                   selected = c("K", "A"))
+
+                ),
+                fluidRow(plotOutput("allCrashChart"))
+        ),
         tabItem(tabName = "data",
                 h2("Data notes/FAQ"),
                 p("All crash data is sourced from Community Maps. Community Maps provide the following disclaimer:"),
@@ -324,7 +338,7 @@ https://CommunityMaps.wi.gov/."),
                 p("Yes, the data only include crashes coded to have occurred in the City of Madison. This is intentional, as the Vision Zero policy is a City policy and no other municipalities in Dane County (or the county itself have a Vision Zero policy.")
                 )
       ),
-      tags$footer("Created and maintained by Harald Kliems. This website is not affiliated with the City of Madison. Feature requests? Suggestions? Bug? Submit ", a("an issue on Github", href="https://github.com/vgXhc/vision_zero_dashboard/issues/"), "or reach out via ", a("Twitter", href= "https://twitter.com/HaraldKliems"))
+      tags$footer("Created and maintained by Harald Kliems. This website is not affiliated with the City of Madison. Feature requests? Suggestions? Bug? Submit ", a("an issue on Github", href="https://github.com/vgXhc/vision_zero_dashboard/issues/"), "or reach out by ", a("email", href= "mailto:kliems@gmail.com"))
     )
 )
 
@@ -446,13 +460,15 @@ server <- function(input, output) {
         tm_polygons(alpha = .2,
                     id = "") +
         tm_shape(crashes_KA_map |> 
-          filter(bikeflag == "Y")) +
+          filter(bikeflag == "Y") |> 
+            mutate(severity = fct_drop(severity))) + #drop unused levels so that legend works
         tm_dots("severity",
                 id = "location",
                 popup.vars=c("Date"="date", 
                              "Number of fatalities" = "totfatl", 
                              "Number of serious injuries" = "totinj"),
-                palette = c("black", "red"))
+                palette = c("black", "red")) +
+        tm_layout(title = "Bicycle crashes 2017-")
     )
     
     # map of impaired crashes
@@ -475,17 +491,28 @@ server <- function(input, output) {
         tm_polygons(alpha = .2,
                     id = "") +
         tm_shape(crashes_KA_map |> 
-                   filter(pedflag == "Y")) +
+                   filter(pedflag == "Y") |> 
+                   mutate(severity = fct_drop(severity))) + #drop unused levels so that legend works
         tm_dots("severity",
                 id = "location",
                 popup.vars=c("Date"="date", 
                              "Number of fatalities" = "totfatl", 
                              "Number of serious injuries" = "totinj"),
                 palette = c("black", "red")) +
-        tm_layout(title = "Pedestrian crashes")
+        tm_layout(title = "Pedestrian crashes 2017-")
     )
-    
-    
+
+    # chart of all crashes
+    output$allCrashChart <- renderPlot(crashes_all_msn |>
+      filter(injsvr %in% input$severity) |>
+      group_by(severity, year) |>
+      tally() |>
+      ggplot(aes(year, n, fill = severity)) +
+      geom_col() +
+        scale_fill_viridis_d() +
+        labs(title = "Reported crashes in Madison, 2017--",
+             subtitle = "Current year only includes year-to-date")
+    )
 
 }
 

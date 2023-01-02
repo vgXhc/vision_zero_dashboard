@@ -40,6 +40,22 @@ download_crashes <- function(year) {
 
 crashes_all_dane <- map_dfr(2017:year(today()), download_crashes)
 
+crashes_all_dane <- crashes_all_dane |> 
+  mutate(date = mdy(date),
+         year = year(date),
+         severity = case_when(injsvr == "K" ~ "fatal crash",
+                              injsvr == "A" ~ "serious injury crash",
+                              injsvr == "B" ~ "minor injury crash",
+                              injsvr == "C" ~ "suspected injury crash",
+                              injsvr == "O" ~ "no injury crash"
+         ),
+         severity = factor(severity, levels = c("fatal crash",
+                                                "serious injury crash",
+                                                "minor injury crash",
+                                                "suspected injury crash",
+                                                "no injury crash"))
+  )
+
 board |> pin_write(crashes_all_dane, "crashes_all_dane", versioned = F, type = "rds")
 
 
