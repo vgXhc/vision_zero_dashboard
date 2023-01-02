@@ -477,13 +477,15 @@ server <- function(input, output) {
         tm_polygons(alpha = .2,
                     id = "") +
         tm_shape(crashes_KA_map |> 
-                   filter(impaired == "Y")) +
+                   filter(impaired == "Y") |> 
+                   mutate(severity = fct_drop(severity))) +
         tm_dots("severity",
                 id = "location",
                 popup.vars=c("Date"="date", 
                              "Number of fatalities" = "totfatl", 
                              "Number of serious injuries" = "totinj"),
-                palette = c("black", "red"))
+                palette = c("black", "red")) +
+        tm_layout(title = "Impaired crashes 2017-")
     )
     # map of ped crashes
     output$pedMap <- renderTmap(
