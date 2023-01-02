@@ -24,6 +24,11 @@ download_crashes <- function(year) {
   
   df_hist <- st_read("crashes_hist.json")
   
+#if there are no crashes, return NULL so that the function doesn't throw an error  
+  if (nrow(df_hist) == 0) {
+    return(NULL)
+  }
+  
   # to access the various flags in the data, we need to parse the json once more
   # and then add that to the original crashes data frame
   crashesJSON <- fromJSON("crashes_hist.json")
@@ -34,7 +39,6 @@ download_crashes <- function(year) {
 }
 
 crashes_all_dane <- map_dfr(2017:year(today()), download_crashes)
-
 
 board |> pin_write(crashes_all_dane, "crashes_all_dane", versioned = F, type = "rds")
 
