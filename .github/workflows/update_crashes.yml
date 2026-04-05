@@ -13,7 +13,7 @@ jobs:
       S3_ACCESS_KEY: ${{ secrets.S3_ACCESS_KEY }}
       S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       - uses: r-lib/actions/setup-r@v2
       - name: Install required packages
         run: Rscript -e 'install.packages(c("pins", "sf", "lubridate", "tidyverse", "jsonlite"), dependencies = TRUE)'
